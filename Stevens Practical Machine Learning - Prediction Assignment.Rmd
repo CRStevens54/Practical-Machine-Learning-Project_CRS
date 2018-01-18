@@ -1,0 +1,148 @@
+---
+title: "Stevens Practical Machine Learning - Prediction Assignment"
+output:
+  md_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Executive Summary
+Using data generated from activity monitors such as Jawbone Up, Nike FuelBand, and Fitbit.  Here we analyzed this data set to predict the manner in which people performed each exercise in the difference classes they took.
+
+### load the data from CSV files
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+
+train_url <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_url  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+train_csv <- read.csv(url(train_url),na.strings=c("NA","#DIV/0!",""))
+test_csv  <- read.csv(url(test_url),na.strings=c("NA","#DIV/0!",""))
+
+```
+
+
+### remove any columns with near zero values
+```{r}
+nzvTraining <- nearZeroVar(train_csv, saveMetrics=TRUE)
+train_Sub <- train_csv[,nzvTraining$nzv==FALSE]
+
+train_Sub <- train_Sub[,7:length(colnames(train_Sub))]
+```
+
+### Count NAs and remove columns with greater than 50% NA as well as drop NAs from data frame
+```{r}
+nonnaCols <- as.vector(apply(train_Sub, 2, function(train_Sub) length(which(!is.na(train_Sub)))))
+dropNAs <- c()
+for (i in 1:length(nonnaCols)) {
+  if (nonnaCols[i] > nrow(train_Sub)*.50) {
+    dropNAs <- c(dropNAs, colnames(train_Sub)[i])
+  }
+}
+
+train_Sub <- train_Sub[,(names(train_Sub) %in% dropNAs)]
+```
+
+### remove variable "classe" so that both the test and training data sets have matching variables
+```{r}
+keepCols <- colnames(train_Sub[, -53])
+test_Sub <- test_csv[keepCols] 
+```
+
+### Generate a training and validation data partition
+```{r}
+inTrain = createDataPartition(train_Sub$classe, p = 0.7, list=FALSE)
+training = train_Sub[ inTrain,]
+validation = train_Sub[-inTrain,]
+```
+
+# Predicting the Manner in Which Excersizes are done:
+Here we test out 3 different models to determine which model predicts with the highest accuracy on the training set.
+### Decision Tree with Cross validation
+```{r}
+set.seed(250)
+tc <- trainControl(method="cv", number=10)
+mod_DT_CV <- train(classe~., method="rpart", data=training, trControl = tc)
+
+```
+### Decision Tree: Determine Out of Sample Error on Validation data set
+```{r}
+pred_DT_CV <- predict(mod_DT_CV, newdata=validation)
+confusionMatrix(pred_DT_CV, validation$classe)
+
+```
+
+### Stochastic Gradient Boosting with Cross Validation
+```{r}
+set.seed(250)
+tc <- trainControl(method="cv", number=10)
+mod_gbm <- train(classe~., method="gbm", data=training, trControl = tc,verbose = FALSE)
+```
+
+### Stochastic Gradient Boosting: Determine Out of Sample Error on Validation data set
+```{r}
+pred_gbm <- predict(mod_gbm, newdata=validation)
+confusionMatrix(pred_gbm, validation$classe)
+```
+
+### Random Forest
+```{r}
+set.seed(250)
+tc <- trainControl(method="cv", number=10)
+mod_rf <- train(classe~., method="rf", data=training, ntree=100, trControl = tc)
+```
+
+### Random Forest: Determine Out of Sample Error on Validation data set
+```{r}
+pred_rf <- predict(mod_rf, newdata=validation)
+confusionMatrix(pred_rf, validation$classe)
+```
+
+# Determine Accuracy, Error, and Results of Three Models
+## Decission Tree Test Results
+```{r}
+pred_DT_test <- predict(mod_DT_CV, newdata=test_Sub)
+Error_DT <- 1 - as.numeric(confusionMatrix(pred_DT_CV, validation$classe)$overall[1])
+accuracy_DT <- postResample(pred_DT_CV, validation$classe)
+pred_DT_test
+Error_DT
+accuracy_DT
+```
+
+## Stochastic Gradient Boosting Test Results
+```{r}
+pred_gbm_test <- predict(mod_gbm, newdata=test_Sub)
+Error_gbm <- 1 - as.numeric(confusionMatrix(pred_gbm, validation$classe)$overall[1])
+accuracy_gbm <- postResample(pred_gbm, validation$classe)
+pred_gbm_test
+Error_gbm
+accuracy_gbm
+```
+
+## Random Forest Test Results
+```{r}
+pred_rf_test <- predict(mod_rf, newdata=test_Sub)
+Error_rf <- 1 - as.numeric(confusionMatrix(pred_rf, validation$classe)$overall[1])
+accuracy_rf <- postResample(pred_rf, validation$classe)
+pred_rf_test
+Error_rf
+accuracy_rf
+```
+
+# Conclusions
+After looking at the data we tested three different models to determine which had the best accuracy with the lowest error and predicted the our test data set with high benchmarks.  We found that the decision tree, although fast, was not very accurate and had a high error rate.  Next we looked at Generalized Linear Model and this gave very nice results with high accuracy at 0.963 which was considerably better than decision trees, but was also considerably slower.  Random Forest was our third model which ran fast and gave us an accuracy of 0.9932.  It seems to show that random forest is the preferred method for prediction and when utilized with the test set give the proper results. Both random forest and the gradient boosting gave the same output of predictions for the test data set.  one missing piece is the possibility of overfitting, but the test data seems to predict well.
+
+
+# APPENDIX
+### Figure 1: Decision Tree
+```{r}
+library(rattle)
+fancyRpartPlot(mod_DT_CV$finalModel)
+```
